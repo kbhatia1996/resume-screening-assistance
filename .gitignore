@@ -1,0 +1,15 @@
+# Ignore virtual environments
+venv/
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore macOS system files
+.DS_Store
+
+# Ignore raw resumes (keep parsed JSON only)
+data/resumes/raw/*
+
+# Ignore parsed JSON files
+data/resumes/parsed/*.json
