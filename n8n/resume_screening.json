@@ -1,0 +1,81 @@
+{
+  "name": "Resume Screening Pipeline",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Trigger - S3 (Prod)",
+      "type": "n8n-nodes-base.s3Trigger",
+      "position": [250, 200],
+      "parameters": {
+        "bucketName": "your-prod-bucket-name",
+        "events": ["s3:ObjectCreated:*"],
+        "prefix": "resumes/"
+      },
+      "notes": "Use this in PROD to trigger when a new file is uploaded to S3."
+    },
+    {
+      "id": "2",
+      "name": "Trigger - Local Folder (Dev)",
+      "type": "n8n-nodes-base.folderTrigger",
+      "position": [250, 400],
+      "parameters": {
+        "folderPath": "/Users/yourname/resume_project/raw_resumes",
+        "events": ["add"]
+      },
+      "notes": "Use this in DEV to trigger when a file is added locally."
+    },
+    {
+      "id": "3",
+      "name": "Run Python Parser",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [550, 300],
+      "parameters": {
+        "command": "python3",
+        "arguments": "python/resume_parser.py {{$json[\"filePath\"]}}"
+      },
+      "notes": "Runs resume_parser.py with file path as input. Works both for local or S3 downloaded file."
+    },
+    {
+      "id": "4",
+      "name": "Run Embedding Pipeline",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [850, 300],
+      "parameters": {
+        "command": "python3",
+        "arguments": "python/pipeline.py output.json"
+      },
+      "notes": "Takes the parsed JSON and generates embeddings, then stores them in Chroma."
+    },
+    {
+      "id": "5",
+      "name": "Rate Limiter",
+      "type": "n8n-nodes-base.wait",
+      "position": [1050, 300],
+      "parameters": {
+        "interval": 2000
+      },
+      "notes": "Simple delay (2s) between OpenAI API calls. Extend for batching if needed."
+    },
+    {
+      "id": "6",
+      "name": "Notify Recruiter (Email)",
+      "type": "n8n-nodes-base.emailSend",
+      "position": [1250, 300],
+      "parameters": {
+        "fromEmail": "noreply@yourdomain.com",
+        "toEmail": "recruiter@yourdomain.com",
+        "subject": "New Resume Processed",
+        "text": "Resume parsed, embedded, and stored in Chroma DB. Ready for querying."
+      }
+    }
+  ],
+  "connections": {
+    "1": { "main": [[ { "node": "Run Python Parser", "type": "main", "index": 0 } ]] },
+    "2": { "main": [[ { "node": "Run Python Parser", "type": "main", "index": 0 } ]] },
+    "3": { "main": [[ { "node": "Run Embedding Pipeline", "type": "main", "index": 0 } ]] },
+    "4": { "main": [[ { "node": "Rate Limiter", "type": "main", "index": 0 } ]] },
+    "5": { "main": [[ { "node": "Notify Recruiter (Email)", "type": "main", "index": 0 } ]] }
+  },
+  "active": false
+}
+
