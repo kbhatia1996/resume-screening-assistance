@@ -1,9 +1,68 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import json
 import glob
 import boto3  # For S3 in prod
 import chromadb
-from langchain_openai import OpenAIEmbeddings
+from typing import List
+
+# Embedding provider selection order:
+# 1) Hugging Face Inference (if HF_API_TOKEN set)
+# 2) OpenAI (if OPENAI_API_KEY set)
+# 3) Local sentence-transformers (optional, heavy)
+
+get_embedding = None
+
+# --- Hugging Face Inference API ---
+HF_TOKEN = os.getenv("HF_API_TOKEN")
+HF_MODEL = os.getenv("HF_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+if HF_TOKEN:
+    try:
+        from huggingface_hub import InferenceApi
+        _hf_infer = InferenceApi(repo_id=HF_MODEL, token=HF_TOKEN)
+        def get_embedding(text: str) -> List[float]:
+            resp = _hf_infer(inputs=text)
+            # If response is dict with 'embedding'
+            if isinstance(resp, dict) and 'embedding' in resp:
+                return resp['embedding']
+            if isinstance(resp, (list, tuple)):
+                return list(resp)
+            if isinstance(resp, dict):
+                for v in resp.values():
+                    if isinstance(v, (list, tuple)):
+                        return list(v)
+            raise RuntimeError('Unexpected HF Inference response format for embeddings')
+    except Exception as e:
+        print(f"[pipeline] Hugging Face inference init failed: {e}")
+        get_embedding = None
+
+# --- OpenAI fallback ---
+if get_embedding is None and os.getenv("OPENAI_API_KEY"):
+    try:
+        from openai import OpenAI
+        _openai_client = OpenAI()
+        def get_embedding(text: str) -> List[float]:
+            resp = _openai_client.embeddings.create(
+                model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+                input=text
+            )
+            return resp.data[0].embedding
+    except Exception as e:
+        print(f"[pipeline] OpenAI client init failed: {e}")
+        get_embedding = None
+
+# --- Local sentence-transformers (optional heavy) ---
+if get_embedding is None:
+    try:
+        from sentence_transformers import SentenceTransformer
+        _st_model = SentenceTransformer(os.getenv("ST_MODEL", "all-MiniLM-L6-v2"))
+        def get_embedding(text: str) -> List[float]:
+            vec = _st_model.encode(text)
+            return vec.tolist() if hasattr(vec, "tolist") else list(vec)
+    except Exception:
+        get_embedding = None
+        print("[pipeline] No embedding provider available. Set HF_API_TOKEN or OPENAI_API_KEY, or install sentence-transformers (and torch) for local embeddings.")
 
 # === Config ===
 PARSED_DIR = "data/resumes/parsed/"  # local parsed resumes
@@ -20,10 +79,6 @@ chroma_client = chromadb.PersistentClient(path="chroma_db")
 # Create / get collection
 collection = chroma_client.get_or_create_collection(name="resumes")
 
-# OpenAI Embeddings
-embedding_fn = OpenAIEmbeddings(model="text-embedding-3-small")  
-# NOTE: requires OPENAI_API_KEY in env
-
 
 def process_resume(file_path, file_name):
     """Read JSON, embed, and store in Chroma."""
@@ -31,8 +86,16 @@ def process_resume(file_path, file_name):
         data = json.load(f)
 
     # Create embedding using summary or experience
-    content = data.get("summary", "") + " " + data.get("experience", "")
-    vector = embedding_fn.embed_query(content)
+    # If 'experience' is a list, join into text
+    experience = data.get("experience", "")
+    if isinstance(experience, list):
+        experience = "\n".join([e.get("description", str(e)) if isinstance(e, dict) else str(e) for e in experience])
+    content = (data.get("summary", "") or "") + "\n" + (experience or "")
+    if get_embedding is None:
+        print(f"[pipeline] Skipping embedding for {file_name}: no embedding provider configured.")
+        return
+
+    vector = get_embedding(content)
 
     # Store in Chroma
     collection.add(

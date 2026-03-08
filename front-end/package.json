@@ -1,0 +1,28 @@
+{
+  "name": "resume-screening-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "ng serve --host 0.0.0.0 --port 4200 --disable-host-check",
+    "build": "ng build",
+    "test": "ng test"
+  },
+  "dependencies": {
+    "@angular/animations": "~16.2.0",
+    "@angular/common": "~16.2.0",
+    "@angular/compiler": "~16.2.0",
+    "@angular/core": "~16.2.0",
+    "@angular/forms": "~16.2.0",
+    "@angular/platform-browser": "~16.2.0",
+    "@angular/platform-browser-dynamic": "~16.2.0",
+    "@angular/router": "~16.2.0",
+    "rxjs": "~7.8.0",
+    "zone.js": "~0.13.0",
+    "swiper": "^10.0.0"
+  },
+  "devDependencies": {
+    "@angular/cli": "~16.2.0",
+    "@angular/compiler-cli": "~16.2.0",
+    "typescript": "~5.2.0"
+  }
+}
